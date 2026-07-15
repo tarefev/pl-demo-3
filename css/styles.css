@@ -237,6 +237,7 @@ button {
   outline: none;
 }
 .doc-header__body p { min-height: 1em; }
+.doc-header__body .placeholder { color: var(--text-muted); }
 
 /* --- Заголовок документа --- */
 .doc-title {
@@ -373,93 +374,7 @@ button {
   gap: 16px;
 }
 
-/* --- Карточка дела --- */
-.case-card {
-  background: #f6f7f9;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  flex: none;
-  max-height: 340px;
-  overflow-y: auto;
-  font-size: 12.5px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.case-card__title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.case-card--empty .case-card__placeholder {
-  color: var(--text-muted);
-  text-align: center;
-  padding: 18px 0 10px;
-}
-.case-card__section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.case-card__section-title {
-  font-size: 11.5px;
-  font-weight: 700;
-  color: #5b6270;
-}
-.case-card__row {
-  display: flex;
-  gap: 8px;
-  color: #3c4250;
-}
-.case-card__row span {
-  color: var(--text-muted);
-  min-width: 78px;
-  flex: none;
-}
-.case-card__episode {
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-.case-card__episode-title {
-  font-weight: 700;
-  margin-bottom: 4px;
-  color: #3c4250;
-}
-.case-card__episode-text {
-  color: #5b6270;
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.case-card__line {
-  background: var(--accent-soft-2);
-  border: 1px solid #dfe5fd;
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-.case-card__line-title {
-  color: var(--accent);
-  font-weight: 700;
-}
-.case-card__line-thesis {
-  color: #5b6270;
-  margin-top: 3px;
-  line-height: 1.5;
-}
-.case-card__list {
-  padding-left: 18px;
-  color: #3c4250;
-  line-height: 1.6;
-}
-
-/* Подсветка нового элемента (эпизод, линия, блок) */
+/* Подсветка нового элемента (шапка, блок) */
 @keyframes flash-bg {
   0% { box-shadow: 0 0 0 3px rgba(245, 166, 35, .55); }
   100% { box-shadow: 0 0 0 3px rgba(245, 166, 35, 0); }

@@ -1,11 +1,13 @@
 /**
  * Демо-движок чата по каркасу:
  *  - состояния: сценарий не запущен (C) / сценарий предложил чоисы (B.1) /
- *    сценарий ждёт текст (B.2) / идёт генерация (D, ввод заблокирован);
+ *    сценарий ждёт текст (B.2) / идёт генерация (D, ввод заблокирован) /
+ *    стартовый сценарий выбора типа документа (A — не прерывается командами);
  *  - перебивка: новый сценарий (командой из чата или файлом) поверх активного —
  *    вопрос «прервать?»; старый завершается, стейт обнуляется, действия не откатываются;
- *  - сценарии: привязка линии (№2), создание линии (№6), проверка документа (№15),
- *    генерация по линиям (№17), справка (№14), разбор DOCX (№3 — по скрепке).
+ *  - сценарии: стартовый (№1), привязка линии (№2), создание линии (№6),
+ *    проверка документа (№15), генерация по линиям (№17), справка (№14),
+ *    разбор DOCX (№3 — по скрепке).
  */
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -14,21 +16,24 @@ const switcherTabsEl = $('#demo-switcher-tabs');
 const docBlocksEl = $('#doc-blocks');
 const feedEl = $('#assistant-feed');
 const assistantScrollEl = $('#assistant-scroll');
-const caseCardEl = $('#case-card');
 const contextEl = $('#input-context');
 const promptEl = $('#prompt-input');
 const sendBtn = $('#btn-send');
 const attachBtn = $('#btn-attach');
+const topbarTitleEl = $('#topbar-title');
+const docTitleEl = $('#doc-title');
+const docHeaderBodyEl = $('#doc-header-body');
 
 /* ================= Состояние ================= */
 
 const state = {
   tabIndex: 0,
-  card: null,          // рабочая копия карточки дела
+  card: null,          // рабочая копия карточки дела (в чате не показывается)
   blocks: null,        // рабочая копия блоков документа
   boundLines: null,    // Set id линий, уже привязанных к блокам
   activeBlockId: null,
-  scenario: null,      // { id, title, stage: 'choices'|'text', chipsSpec, chipsEl, onText, reaskText }
+  docType: null,       // { key, label } после стартового сценария
+  scenario: null,      // { id, title, stage: 'choices'|'text', chipsSpec, chipsEl, onText, reaskText, uninterruptible }
   busy: false
 };
 
@@ -57,6 +62,7 @@ function resetDemo(tabIndex) {
   state.blocks = clone(DOC_BLOCKS);
   state.boundLines = new Set();
   state.activeBlockId = null;
+  state.docType = null;
   state.scenario = null;
   state.busy = false;
 
@@ -65,13 +71,16 @@ function resetDemo(tabIndex) {
   autosize();
   setBusy(false);
 
+  topbarTitleEl.textContent = 'Новый документ';
+  docTitleEl.textContent = 'Новый документ';
+  docHeaderBodyEl.innerHTML = '<p class="placeholder">Шапка документа сформируется после выбора типа</p>';
+
   renderSwitcher();
   renderBlocks();
-  renderCaseCard();
   setActiveBlock('block-2');
 
   if (tab.demoNote) addMessage('demo', tab.demoNote);
-  if (tab.autostart === 'bind-line') startBindLine();
+  startDocTypeScenario();
 }
 
 /* ================= Документ ================= */
@@ -128,7 +137,6 @@ function insertBlock(text, { afterId } = {}) {
   const idx = afterId ? state.blocks.findIndex(b => b.id === afterId) : -1;
   if (idx >= 0) state.blocks.splice(idx + 1, 0, block);
   else state.blocks.push(block);
-  // перенумеровываем метки по порядку
   state.blocks.forEach((b, i) => { b.label = `Блок ${i + 1}`; });
   renderBlocks();
   flashBlock(block.id);
@@ -143,66 +151,30 @@ function flashBlock(id) {
   setTimeout(() => el.classList.remove('flash'), 1600);
 }
 
-/* ================= Карточка дела ================= */
+/* ================= Шапка и заголовок документа ================= */
 
-function renderCaseCard(highlightSel) {
-  const c = state.card;
-  const filled = c.advocate || c.client || c.episodes.length ||
-    c.lines.length || c.circumstances.length || c.evidence.length;
+function applyDocTitle(title) {
+  topbarTitleEl.textContent = title;
+  docTitleEl.textContent = title;
+}
 
-  if (!filled) {
-    caseCardEl.innerHTML = `
-      <div class="case-card case-card--empty">
-        <div class="case-card__title">Карточка дела</div>
-        <div class="case-card__placeholder">Карточка дела не заполнена</div>
-      </div>`;
-    return;
-  }
+/** Генерация шапки по типу документа и данным карточки (плейсхолдеры, где данных нет). */
+function generateHeaderLines(type) {
+  const adv = state.card.advocate || '&lt;вставить ФИО адвоката&gt;';
+  const cli = state.card.client || '&lt;вставить ФИО доверителя&gt;';
+  const lines = [];
+  if (type.court) lines.push(`В &lt;вставить название суда ${type.court}&gt;`);
+  lines.push(`от адвоката ${adv}`);
+  lines.push(`в интересах ${cli}`);
+  return lines;
+}
 
-  const section = (title, itemsHtml, cls = '') => itemsHtml ? `
-    <div class="case-card__section ${cls}">
-      ${title ? `<div class="case-card__section-title">${title}</div>` : ''}
-      ${itemsHtml}
-    </div>` : '';
-
-  const persons = [
-    c.advocate ? `<div class="case-card__row"><span>Адвокат</span>${c.advocate}</div>` : '',
-    c.client ? `<div class="case-card__row"><span>Доверитель</span>${c.client}</div>` : ''
-  ].join('');
-
-  const episodes = c.episodes.map(ep => `
-    <div class="case-card__episode" data-id="${ep.id}">
-      <div class="case-card__episode-title">${ep.title}</div>
-      <div class="case-card__episode-text">${ep.text}</div>
-    </div>`).join('');
-
-  const lines = c.lines.map(l => `
-    <div class="case-card__line" data-id="${l.id}">
-      <div class="case-card__line-title">${l.title}</div>
-      ${l.thesis ? `<div class="case-card__line-thesis">${l.thesis}</div>` : ''}
-    </div>`).join('');
-
-  const list = arr => arr.length
-    ? `<ul class="case-card__list">${arr.map(i => `<li>${i}</li>`).join('')}</ul>` : '';
-
-  caseCardEl.innerHTML = `
-    <div class="case-card">
-      <div class="case-card__title">Карточка дела</div>
-      ${section('', persons)}
-      ${section(`Фабула · ${c.episodes.length} эп.`, episodes)}
-      ${section(`Линии защиты · ${c.lines.length}`, lines)}
-      ${section('Обстоятельства', list(c.circumstances))}
-      ${section('Доказательства', list(c.evidence))}
-    </div>`;
-
-  if (highlightSel) {
-    const el = caseCardEl.querySelector(highlightSel);
-    if (el) {
-      el.classList.add('flash');
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      setTimeout(() => el.classList.remove('flash'), 1600);
-    }
-  }
+function renderDocHeader(lines) {
+  docHeaderBodyEl.innerHTML = lines.map(l => `<p>${l}</p>`).join('');
+  const wrap = docHeaderBodyEl.closest('.doc-header');
+  wrap.classList.add('flash');
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  setTimeout(() => wrap.classList.remove('flash'), 1600);
 }
 
 /* ================= Чип контекста во вводе ================= */
@@ -274,8 +246,13 @@ function setBusy(busy) {
 
 /* ================= Движок сценариев ================= */
 
-function startScenario(id, title) {
-  state.scenario = { id, title, stage: null, chipsSpec: null, chipsEl: null, onText: null, reaskText: null };
+function startScenario(id, title, { uninterruptible } = {}) {
+  state.scenario = {
+    id, title,
+    stage: null, chipsSpec: null, chipsEl: null,
+    onText: null, reaskText: null,
+    uninterruptible: !!uninterruptible
+  };
   renderContextChip();
 }
 
@@ -446,6 +423,9 @@ function askTextMismatch(text, trigger) {
   ], 'Похоже, это не ответ на мой вопрос. Это был ответ, переформулируете или это новый вопрос?');
 }
 
+/** Текст похож на название типа документа (определитель A.1.3.2). */
+const DOC_TYPE_NAME_RE = /жалоб|ходатайств|заявлен|позици|возражен|апелляц|кассац|отзыв|обращени|документ/i;
+
 async function routeText(text) {
   const trigger = matchTrigger(text);
   const sc = state.scenario;
@@ -454,6 +434,18 @@ async function routeText(text) {
   if (!sc) {
     if (trigger) return launchScenario(trigger);
     return onFreeInput(text);
+  }
+
+  // Состояние A: стартовый сценарий — команды его не прерывают
+  if (sc.id === 'start-doc' && sc.stage === 'choices') {
+    const chipBtn = matchChipButton(text);
+    if (chipBtn) return chipBtn.click();
+    if (text.length <= 60 && DOC_TYPE_NAME_RE.test(text)) {
+      const label = text.charAt(0).toUpperCase() + text.slice(1);
+      return finalizeDocType({ key: 'other' }, label);
+    }
+    addMessage('assistant', 'Сначала выберем тип документа. Выберите вариант ниже или напишите название документа своими словами.');
+    return offerChoices(sc.chipsSpec);
   }
 
   // B.1: предложены чоисы
@@ -478,6 +470,79 @@ async function routeText(text) {
 async function onFreeInput(text) {
   await think('Обрабатываю запрос', 1400);
   addMessage('assistant', '(Демо) Свободный ввод вне сценариев отвечает заглушкой. Наберите «справка» — покажу доступные команды.');
+}
+
+/* ================= Сценарий №1: стартовый (выбор типа документа) ================= */
+
+function startDocTypeScenario() {
+  startScenario('start-doc', 'Выбор типа документа', { uninterruptible: true });
+  addMessage('assistant', WELCOME_TEXT).classList.add('msg--pre');
+  offerDocTypeChoices();
+}
+
+function offerDocTypeChoices(intro) {
+  offerChoices(DOC_TYPES.map(t => ({
+    label: t.label,
+    onPick: () => {
+      addMessage('user', t.label);
+      onDocTypePicked(t);
+    }
+  })), intro);
+}
+
+function onDocTypePicked(type) {
+  // 1.1.1 Ходатайство: второй набор чойсов
+  if (type.key === 'motion') {
+    offerChoices(MOTION_TYPES.map(m => ({
+      label: m,
+      onPick: () => {
+        addMessage('user', m);
+        finalizeDocType(type, `Ходатайство ${m.charAt(0).toLowerCase()}${m.slice(1)}`);
+      }
+    })), 'Какое ходатайство готовим? Выберите тип или напишите свой:');
+    return;
+  }
+  finalizeDocType(type, type.label);
+}
+
+/** Шаг 2 стартового: тип выбран — шапка и переход к следующему сценарию. */
+async function finalizeDocType(type, title) {
+  state.docType = { key: type.key, label: title };
+  applyDocTitle(title);
+
+  await think('Формирую шапку документа', 1600);
+  renderDocHeader(generateHeaderLines(type));
+  addMessage('assistant', `Тип документа выбран: «${title}». Шапка документа сформирована.`);
+
+  // 2.1 апелляция/кассация/позиция → сценарий 17
+  if (type.key === 'appeal' || type.key === 'cassation' || type.key === 'position') {
+    state.scenario = null;
+    startScenario('gen-by-lines', 'Генерация текста по линиям защиты');
+    runGenByLines();
+    return;
+  }
+
+  // 2.2 ходатайство → сценарий 18
+  if (type.key === 'motion') {
+    const sc = state.scenario;
+    sc.id = 'motion';
+    sc.title = 'Подготовка ходатайства';
+    sc.uninterruptible = false;
+    awaitText('Уточните: какие обстоятельства обосновывают ходатайство и о чём просим суд?', onMotionDetails);
+    return;
+  }
+
+  // 2.3 другой тип → сценарий 19 → справка (сценарий 14)
+  endScenario('Документ создан. Дальше можно работать командами из чата.');
+  startHelp();
+}
+
+/** Сценарий 18: генерация текста ходатайства по введённым деталям. */
+async function onMotionDetails(text) {
+  await think('Генерирую текст ходатайства', 2000);
+  insertBlock(`${text.charAt(0).toUpperCase()}${text.slice(1)}. На основании изложенного, руководствуясь нормами УПК РФ, защита просит суд удовлетворить настоящее ходатайство.`);
+  endScenario('Текст ходатайства добавлен в документ.');
+  startHelp();
 }
 
 /* ================= Сценарий №2: привязка линии защиты к блоку ================= */
@@ -529,7 +594,6 @@ async function onFabulaEntered(text) {
     text: text
   };
   state.card.episodes.push(episode);
-  renderCaseCard(`.case-card__episode[data-id="${episode.id}"]`);
 
   addMessage('assistant', 'Фабула распознана и сохранена в карточку дела.');
   onEpisodeChosen(episode, { silent: true });
@@ -628,7 +692,7 @@ async function createLine(episode, title, thesis) {
     generatedText: REGEN_FALLBACK_TEXT
   };
   state.card.lines.push(line);
-  renderCaseCard(`.case-card__line[data-id="${line.id}"]`);
+  addMessage('assistant', `Линия защиты сохранена в карточку дела: «${line.title}».`);
 
   onLineChosen(line, episode, { created: true });
 }
@@ -658,7 +722,7 @@ async function onLineChosen(line, episode, { created } = {}) {
         endScenario('Готово: линия привязана к блоку. Текст блока оставлен без изменений.');
       }
     }
-  ], `${created ? 'Линия создана. ' : ''}Линия привязана к ${blockLabel}, эпизод — к линии. Перегенерировать текст блока с учётом привязанной информации?`);
+  ], `${created ? '' : 'Линия привязана к ' + blockLabel + ', эпизод — к линии. '}Перегенерировать текст блока с учётом привязанной информации?`);
 }
 
 /* ================= Сценарий №6: создание линии защиты ================= */
@@ -718,7 +782,6 @@ async function createLine6(episode, title, thesis) {
     generatedText: REGEN_FALLBACK_TEXT
   };
   state.card.lines.push(line);
-  renderCaseCard(`.case-card__line[data-id="${line.id}"]`);
 
   const options = [];
   if (state.activeBlockId) {
@@ -754,7 +817,7 @@ async function createLine6(episode, title, thesis) {
     }
   );
 
-  offerChoices(options, 'Линия создана. Добавить текст по ней в документ?');
+  offerChoices(options, `Линия создана: «${line.title}». Добавить текст по ней в документ?`);
 }
 
 /* ================= Сценарий №15: проверка документа ================= */
@@ -837,9 +900,13 @@ function startGenByLines() {
 async function runGenByLines() {
   const unbound = unboundLines();
   if (!unbound.length) {
-    endScenario(state.card.lines.length
-      ? 'Все линии защиты уже привязаны к блокам документа.'
-      : 'В карточке дела нет линий защиты — создайте линию командой «создай линию».');
+    // 17.1.2 — линий нет: отбивка и справка (сценарий 14)
+    if (!state.card.lines.length) {
+      endScenario('В карточке дела нет линий защиты — блоки по линиям сгенерировать пока нечем.');
+      startHelp();
+    } else {
+      endScenario('Все линии защиты уже привязаны к блокам документа.');
+    }
     return;
   }
 
@@ -863,15 +930,22 @@ function startHelp() {
 function onAttachClick() {
   if (state.busy) return;
 
-  if (state.scenario) {
+  const sc = state.scenario;
+
+  // приложили файл во время стартового сценария: разбираем и возвращаемся к выбору типа
+  if (sc && sc.id === 'start-doc') {
+    runDocxDuringStart();
+    return;
+  }
+  if (sc) {
     askInterrupt('Разбор файла', () => runDocxScenario());
     return;
   }
   runDocxScenario();
 }
 
-async function runDocxScenario() {
-  startScenario('docx', 'Разбор документа');
+/** Общий пайплайн разбора приговора (шаги 3.1–3.4). */
+async function runDocxPipeline() {
   addFileMessage(DOCX_FILE_NAME);
 
   await think('Проверяю, приговор ли это первой инстанции', 1500);
@@ -880,7 +954,6 @@ async function runDocxScenario() {
   await think('Разбираю документ: доверитель, фабула, доказательства, стадии, участники, обстоятельства, линии защиты', 3000);
 
   state.card = clone(DOCX_PARSED_CARD);
-  renderCaseCard();
   addMessage('assistant', 'Карточка дела обновлена по материалам приговора.');
 
   const c = state.card;
@@ -891,11 +964,22 @@ async function runDocxScenario() {
     `• Линий защиты: ${c.lines.length}\n` +
     `• Доказательств: ${c.evidence.length}\n` +
     `• Обстоятельств: ${c.circumstances.length}`).classList.add('msg--pre');
+}
 
-  // 3.5 → сценарий 17
+/** Разбор из состояния C или после перебивки: далее сценарий 17. */
+async function runDocxScenario() {
+  startScenario('docx', 'Разбор документа');
+  await runDocxPipeline();
+
   state.scenario = null;
   startScenario('gen-by-lines', 'Генерация текста по линиям защиты');
   runGenByLines();
+}
+
+/** Разбор во время стартового сценария: после отчёта возвращаемся к выбору типа. */
+async function runDocxDuringStart() {
+  await runDocxPipeline();
+  offerDocTypeChoices('Теперь выберите тип документа — данные из приговора будут использованы при подготовке:');
 }
 
 /* ================= Ввод ================= */

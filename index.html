@@ -20,7 +20,7 @@
     <button class="icon-btn" id="btn-back" title="Назад">
       <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
-    <h1 class="topbar__title">Апелляционная жалоба</h1>
+    <h1 class="topbar__title" id="topbar-title">Новый документ</h1>
     <div class="topbar__spacer"></div>
     <button class="icon-btn" id="btn-print" title="Печать">
       <svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -114,14 +114,12 @@
                 <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
               </button>
             </div>
-            <div class="doc-header__body" contenteditable="true">
-              <p>в киевский районный суд города Симферополя</p>
-              <p>от адвоката Гусейнова</p>
-              <p>в интересах ...</p>
+            <div class="doc-header__body" id="doc-header-body" contenteditable="true">
+              <p class="placeholder">Шапка документа сформируется после выбора типа</p>
             </div>
           </div>
 
-          <h2 class="doc-title" contenteditable="true">Апелляционная жалоба</h2>
+          <h2 class="doc-title" id="doc-title" contenteditable="true">Новый документ</h2>
 
           <!-- Блоки документа: рендерятся из js/app.js -->
           <div id="doc-blocks"></div>
@@ -150,8 +148,6 @@
 
       <div class="assistant-scroll" id="assistant-scroll">
 
-        <!-- Карточка дела: рендерится из js/app.js по активному раскладу -->
-        <div id="case-card"></div>
 
         <!-- Сообщения ассистента: рендерятся из js/app.js -->
         <div id="assistant-feed"></div>
