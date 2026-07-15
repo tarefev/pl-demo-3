@@ -314,6 +314,15 @@ button {
   margin-bottom: 10px;
 }
 
+.doc-empty {
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  padding: 26px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .doc-hint {
   text-align: center;
   color: var(--text-muted);

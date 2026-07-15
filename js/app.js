@@ -82,7 +82,7 @@ function resetDemo(tabIndex) {
 
   renderSwitcher();
   renderBlocks();
-  setActiveBlock('block-2');
+  renderContextChip();
 
   if (tab.demoNote) addMessage('demo', tab.demoNote);
   startDocTypeScenario();
@@ -92,6 +92,10 @@ function resetDemo(tabIndex) {
 
 function renderBlocks() {
   docBlocksEl.innerHTML = '';
+  if (!state.blocks.length) {
+    docBlocksEl.innerHTML = '<div class="doc-empty">В документе пока нет блоков — текст появится по мере работы сценариев</div>';
+    return;
+  }
   state.blocks.forEach(block => {
     const el = document.createElement('div');
     el.className = 'doc-block' + (block.id === state.activeBlockId ? ' is-active' : '');
@@ -905,9 +909,11 @@ async function step15_1() {
 async function step15_rest() {
   await think('Проверяю привязку блоков к линиям защиты', 1100);
   const warnBlocks = state.blocks.filter(b => b.status !== 'done').length;
-  addMessage('assistant', warnBlocks
-    ? `Есть блоки без привязанной линии защиты: ${warnBlocks} (отмечены «!»). Привязать линию можно командой «привяжи линию» по активному блоку.`
-    : 'Все блоки привязаны к линиям защиты.');
+  addMessage('assistant', !state.blocks.length
+    ? 'В документе пока нет блоков.'
+    : warnBlocks
+      ? `Есть блоки без привязанной линии защиты: ${warnBlocks} (отмечены «!»). Привязать линию можно командой «привяжи линию» по активному блоку.`
+      : 'Все блоки привязаны к линиям защиты.');
 
   await think('Проверяю доказательства по линиям защиты', 1100);
   addMessage('assistant', state.card.evidence.length
