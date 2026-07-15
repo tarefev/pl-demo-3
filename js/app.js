@@ -23,6 +23,7 @@ const sendBtn = $('#btn-send');
 const attachBtn = $('#btn-attach');
 const assistantInputEl = $('#assistant-input');
 const scenarioBannerTitleEl = $('#scenario-banner-title');
+const scenarioBannerStepEl = $('#scenario-banner-step');
 const scenarioBannerMenuBtn = $('#scenario-banner-menu');
 const scenarioBannerDropdown = $('#scenario-banner-dropdown');
 const scenarioAbortBtn = $('#scenario-abort');
@@ -299,7 +300,16 @@ function updateScenarioBanner() {
   const sc = state.scenario;
   assistantInputEl.classList.toggle('has-scenario', !!sc);
   scenarioBannerTitleEl.textContent = sc ? sc.title : '';
+  scenarioBannerStepEl.hidden = !(sc && sc.step);
+  scenarioBannerStepEl.textContent = sc && sc.step ? 'шаг ' + sc.step : '';
   scenarioBannerDropdown.classList.remove('is-open');
+}
+
+/** Текущий шаг сценария по нумерации из дока «Ревизия сценариев». */
+function setStep(step) {
+  if (!state.scenario) return;
+  state.scenario.step = step;
+  updateScenarioBanner();
 }
 
 scenarioBannerMenuBtn.addEventListener('click', e => {
@@ -369,7 +379,7 @@ function setBusy(busy) {
 function startScenario(id, title, { uninterruptible } = {}) {
   state.scenario = {
     id, title,
-    stage: null, chipsSpec: null, chipsEl: null,
+    stage: null, step: null, chipsSpec: null, chipsEl: null,
     onText: null, reaskText: null,
     uninterruptible: !!uninterruptible
   };
@@ -598,6 +608,7 @@ async function onFreeInput(text) {
 
 function startDocTypeScenario() {
   startScenario('start-doc', 'Выбор типа документа', { uninterruptible: true });
+  setStep('1.1');
   addMessage('assistant', WELCOME_TEXT).classList.add('msg--pre');
   offerDocTypeChoices();
 }
@@ -615,6 +626,7 @@ function offerDocTypeChoices(intro) {
 function onDocTypePicked(type) {
   // 1.1.1 Ходатайство: второй набор чойсов
   if (type.key === 'motion') {
+    setStep('1.1.1');
     offerChoices(MOTION_TYPES.map(m => ({
       label: m,
       onPick: () => {
@@ -632,6 +644,7 @@ async function finalizeDocType(type, title) {
   state.docType = { key: type.key, label: title };
   applyDocTitle(title);
 
+  setStep(type.key === 'motion' ? '2.2' : type.key === 'other' ? '2.3' : '2.1.1');
   await think('Формирую шапку документа', 1600);
   renderDocHeader(generateHeaderLines(type));
   addMessage('assistant', `Тип документа выбран: «${title}». Шапка документа сформирована.`);
@@ -650,7 +663,7 @@ async function finalizeDocType(type, title) {
     sc.id = 'motion';
     sc.title = 'Подготовка ходатайства';
     sc.uninterruptible = false;
-    updateScenarioBanner();
+    setStep('18');
     awaitText('Уточните: какие обстоятельства обосновывают ходатайство и о чём просим суд?', onMotionDetails);
     return;
   }
@@ -673,6 +686,7 @@ async function onMotionDetails(text) {
 
 function startBindLine() {
   startScenario('bind-line', 'Привязка линии защиты к блоку');
+  setStep('2.1');
 
   // 2.1 Блок известен?
   if (!state.activeBlockId) {
@@ -682,6 +696,7 @@ function startBindLine() {
 
   // 2.2 Эпизоды
   if (!state.card.episodes.length) {
+    setStep('2.2.1');
     awaitText(
       'Карточка дела не заполнена: эпизодов фабулы нет. Введите краткую фабулу своими словами прямо в чат либо приложите DOCX с приговором или постановлением о возбуждении дела (скрепка внизу).',
       onFabulaEntered
@@ -692,6 +707,7 @@ function startBindLine() {
   if (state.card.episodes.length === 1) {
     onEpisodeChosen(state.card.episodes[0], { silent: true });
   } else {
+    setStep('2.2.2');
     offerChoices(
       state.card.episodes.map(ep => ({
         label: ep.title,
@@ -710,6 +726,7 @@ function startBindLine() {
 
 /** 2.2.1.1.1 — фабула введена текстом: распознаём и сохраняем эпизод. */
 async function onFabulaEntered(text) {
+  setStep('2.2.1.1');
   await think('Распознаю фабулу', 2000);
 
   const episode = {
@@ -728,13 +745,15 @@ function onEpisodeChosen(episode, { silent } = {}) {
   const lines = state.card.lines.filter(l => !l.episodeId || l.episodeId === episode.id);
 
   if (!lines.length) {
+    setStep('2.3.2');
     addMessage('assistant',
       (silent ? `Эпизод определён: ${episode.title}. ` : '') +
       'Для данного эпизода ещё нет линий защиты. Создайте новую линию.');
-    offerCreateLine(episode);
+    offerCreateLine(episode, { stepBase: '2.3.2' });
     return;
   }
 
+  setStep('2.3.1');
   offerChoices([
     ...lines.map(line => ({
       label: line.title,
@@ -744,21 +763,23 @@ function onEpisodeChosen(episode, { silent } = {}) {
         onLineChosen(line, episode);
       }
     })),
-    { label: 'Создать новую линию', ghost: true, onPick: () => { addMessage('user', 'Создать новую линию'); offerCreateLine(episode, { skipIntro: true }); } },
+    { label: 'Создать новую линию', ghost: true, onPick: () => { addMessage('user', 'Создать новую линию'); offerCreateLine(episode, { skipIntro: true, stepBase: '2.3.1.2' }); } },
     { label: 'Оставить свободным', ghost: true, onPick: () => { addMessage('user', 'Оставить свободным'); endScenario('Блок оставлен свободным — вернуться к выбору линии можно в любой момент.'); } }
   ], 'Выберите линию защиты для этого блока, создайте новую или оставьте блок свободным.');
 }
 
 /** 2.3.х — способ создания линии. */
-function offerCreateLine(episode, { skipIntro } = {}) {
+function offerCreateLine(episode, { skipIntro, stepBase = '2.3.2' } = {}) {
+  setStep(stepBase);
   offerChoices([
-    { label: 'Подобрать по практике', onPick: () => { addMessage('user', 'Подобрать по практике'); offerPracticeLines(episode, 0); } },
-    { label: 'Написать тезис своими словами', onPick: () => { addMessage('user', 'Своими словами'); askThesis(episode); } }
+    { label: 'Подобрать по практике', onPick: () => { addMessage('user', 'Подобрать по практике'); offerPracticeLines(episode, 0, `${stepBase}.1`); } },
+    { label: 'Написать тезис своими словами', onPick: () => { addMessage('user', 'Своими словами'); askThesis(episode, `${stepBase}.2`); } }
   ], skipIntro ? null : 'Как создать линию защиты?');
 }
 
 /** Пилзы линий из практики с пагинацией «Показать еще». */
-function offerPracticeLines(episode, offset) {
+function offerPracticeLines(episode, offset, step) {
+  if (step && offset === 0) setStep(step);
   const page = PRACTICE_LINES.slice(offset, offset + PRACTICE_PAGE_SIZE);
   const hasMore = offset + PRACTICE_PAGE_SIZE < PRACTICE_LINES.length;
 
@@ -772,13 +793,17 @@ function offerPracticeLines(episode, offset) {
         createLine(episode, p.title, null);
       }
     })),
-    ...(hasMore ? [{ label: 'Показать еще', ghost: true, onPick: () => offerPracticeLines(episode, offset + PRACTICE_PAGE_SIZE) }] : [])
+    ...(hasMore ? [{ label: 'Показать еще', ghost: true, onPick: () => offerPracticeLines(episode, offset + PRACTICE_PAGE_SIZE, step) }] : [])
   ], offset === 0 ? 'Линии защиты с наиболее объёмной практикой:' : null);
 }
 
 /** Ждём тезис свободным вводом (B.2). */
-function askThesis(episode) {
-  awaitText('Введите тезис защиты своими словами.', text => onThesisEntered(episode, text));
+function askThesis(episode, stepBase = '2.3.2.2') {
+  setStep(`${stepBase}.1`);
+  awaitText('Введите тезис защиты своими словами.', text => {
+    setStep(`${stepBase}.2`);
+    onThesisEntered(episode, text);
+  });
 }
 
 /** «Нейронка» угадывает 3 линии по тезису. */
@@ -823,6 +848,7 @@ async function createLine(episode, title, thesis) {
 
 /** 2.4 — линия привязана, предлагаем перегенерацию блока. */
 async function onLineChosen(line, episode, { created } = {}) {
+  setStep('2.4');
   if (!created) await think('Привязываю линию к блоку', 1200);
 
   state.boundLines.add(line.id);
@@ -856,15 +882,17 @@ async function onLineChosen(line, episode, { created } = {}) {
 
 function startCreateLine() {
   startScenario('create-line', 'Создание линии защиты');
+  setStep('6');
   const episode = state.card.episodes[0] || null;
 
   offerChoices([
     { label: 'Подобрать по практике', onPick: () => { addMessage('user', 'Подобрать по практике'); offerPracticeLines6(episode, 0); } },
-    { label: 'Написать тезис своими словами', onPick: () => { addMessage('user', 'Своими словами'); awaitText('Введите тезис защиты своими словами.', text => onThesis6(episode, text)); } }
+    { label: 'Написать тезис своими словами', onPick: () => { addMessage('user', 'Своими словами'); setStep('6.2.1'); awaitText('Введите тезис защиты своими словами.', text => { setStep('6.2.2'); onThesis6(episode, text); }); } }
   ], 'Как создать линию защиты?');
 }
 
 function offerPracticeLines6(episode, offset) {
+  if (offset === 0) setStep('6.1');
   const page = PRACTICE_LINES.slice(offset, offset + PRACTICE_PAGE_SIZE);
   const hasMore = offset + PRACTICE_PAGE_SIZE < PRACTICE_LINES.length;
 
@@ -899,6 +927,7 @@ async function onThesis6(episode, thesis) {
 
 /** 6.3 — куда добавить текст по созданной линии. */
 async function createLine6(episode, title, thesis) {
+  setStep('6.3');
   await think('Создаю линию защиты', 1500);
 
   const line = {
@@ -961,6 +990,7 @@ function startCheckDoc() {
 }
 
 async function step15_1() {
+  setStep('15.1');
   await think('Проверяю линии защиты, не добавленные в документ', 1300);
   const unbound = unboundLines();
 
@@ -976,6 +1006,7 @@ async function step15_1() {
       label: 'Добавить все линии',
       onPick: async () => {
         addMessage('user', 'Добавить все линии');
+        setStep('15.1.2');
         await think('Генерирую текст документа по выбранным линиям защиты', 2200);
         unbound.forEach(line => {
           insertBlock(composeBlockText(line), { lineId: line.id });
@@ -999,6 +1030,7 @@ async function step15_1() {
 
 /** Шаги 15.2–15.7 — последовательный чек-лист. */
 async function step15_rest() {
+  setStep('15.2');
   await think('Проверяю привязку блоков к линиям защиты', 1100);
   const warnBlocks = state.blocks.filter(b => b.status !== 'done').length;
   addMessage('assistant', !state.blocks.length
@@ -1007,11 +1039,13 @@ async function step15_rest() {
       ? `Есть блоки без привязанной линии защиты: ${warnBlocks} (отмечены «!»). Привязать линию можно командой «привяжи линию» по активному блоку.`
       : 'Все блоки привязаны к линиям защиты.');
 
+  setStep('15.3');
   await think('Проверяю доказательства по линиям защиты', 1100);
   addMessage('assistant', state.card.evidence.length
     ? 'У всех линий защиты есть доказательства.'
     : 'В карточке дела нет доказательств — привязка доказательств к линиям будет доступна из меню ии-звёздочки.');
 
+  setStep('15.5');
   await think('Проверяю просительную часть', 1100);
   if (state.pleas.length) {
     addMessage('assistant', 'Просительная часть заполнена и покрывает текущий состав блоков.');
@@ -1025,9 +1059,11 @@ async function step15_rest() {
     addMessage('assistant', 'Документ пуст — просительная часть будет собрана после добавления блоков.');
   }
 
+  setStep('15.6');
   await think('Проверяю полноту документа', 1300);
   addMessage('assistant', 'Документ можно дополнить: указание на смягчающие обстоятельства (ст. 61 УК РФ) и ходатайство об исследовании видеозаписи в судебном заседании.');
 
+  setStep('15.7');
   await think('Проверяю противоречия между блоками', 1300);
   endScenario('Противоречий между блоками не найдено. Проверка документа завершена.');
 }
@@ -1040,6 +1076,7 @@ function startGenByLines() {
 }
 
 async function runGenByLines() {
+  setStep('17.1');
   const unbound = unboundLines();
   if (!unbound.length) {
     // 17.1.2 — линий нет: отбивка и справка (сценарий 14)
@@ -1052,6 +1089,7 @@ async function runGenByLines() {
     return;
   }
 
+  setStep('17.2');
   await think('Генерирую текст по непривязанным линиям защиты', 2200);
   unbound.forEach(line => {
     insertBlock(composeBlockText(line), { lineId: line.id });
@@ -1091,14 +1129,18 @@ function onAttachClick() {
 async function runDocxPipeline() {
   addFileMessage(DOCX_FILE_NAME);
 
+  setStep('3.1');
   await think('Проверяю, приговор ли это первой инстанции', 1500);
   addMessage('assistant', 'Это приговор первой инстанции — продолжаю разбор.');
 
+  setStep('3.2');
   await think('Разбираю документ: доверитель, фабула, доказательства, стадии, участники, обстоятельства, линии защиты', 3000);
 
+  setStep('3.3');
   state.card = clone(DOCX_PARSED_CARD);
   addMessage('assistant', 'Карточка дела обновлена по материалам приговора.');
 
+  setStep('3.4');
   const c = state.card;
   addMessage('assistant',
     `Отчёт по разбору:\n` +
@@ -1121,7 +1163,15 @@ async function runDocxScenario() {
 
 /** Разбор во время стартового сценария: после отчёта возвращаемся к выбору типа. */
 async function runDocxDuringStart() {
+  const sc = state.scenario;
+  const savedTitle = sc.title;
+  sc.title = 'Разбор документа';
+  updateScenarioBanner();
+
   await runDocxPipeline();
+
+  sc.title = savedTitle;
+  setStep('1.1');
   offerDocTypeChoices('Теперь выберите тип документа — данные из приговора будут использованы при подготовке:');
 }
 
@@ -1203,6 +1253,7 @@ function runStarAction(action) {
       break;
     case 'rewrite':
       startScenario('rewrite-block', 'Переписать блок');
+      setStep('16.6');
       awaitText('Как хотите изменить текст блока?', text => onRewriteBlock(block, text));
       break;
     case 'help':

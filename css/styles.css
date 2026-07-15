@@ -597,10 +597,23 @@ button {
 
 .scenario-banner__text { flex: 1; min-width: 0; }
 .scenario-banner__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--text-muted);
   font-size: 11.5px;
   margin-bottom: 2px;
 }
+.scenario-banner__step {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.scenario-banner__step[hidden] { display: none; }
 .scenario-banner__title {
   font-size: 13.5px;
   font-weight: 700;
