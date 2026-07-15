@@ -332,7 +332,14 @@ scenarioAbortBtn.addEventListener('click', () => {
 
 function scrollFeed() {
   assistantScrollEl.scrollTop = assistantScrollEl.scrollHeight;
+  // и ещё раз после отрисовки — на случай, если контент дорастёт после layout
+  requestAnimationFrame(() => {
+    assistantScrollEl.scrollTop = assistantScrollEl.scrollHeight;
+  });
 }
+
+// любое изменение ленты (сообщение, чипы, «думает», правка текста) прокручивает чат к низу
+new MutationObserver(scrollFeed).observe(feedEl, { childList: true, subtree: true, characterData: true });
 
 function addMessage(kind, text) {
   const el = document.createElement('div');
