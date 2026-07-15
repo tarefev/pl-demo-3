@@ -68,6 +68,54 @@ button {
 .btn--dark { background: #16181d; color: #fff; }
 .btn--dark:hover { background: #2a2d35; }
 
+/* ============ Демо: выбор расклада ============ */
+.demo-switcher {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 20px;
+  background: #16181d;
+  color: #b9bdcb;
+  font-size: 12px;
+  flex: none;
+  z-index: 20;
+}
+.demo-switcher__label {
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: #8a90a0;
+  white-space: nowrap;
+}
+.demo-switcher__tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.demo-tab {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #33363f;
+  color: #b9bdcb;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.demo-tab:hover { background: #23262e; }
+.demo-tab.is-active {
+  background: #f5a623;
+  border-color: #f5a623;
+  color: #16181d;
+  font-weight: 700;
+}
+.demo-switcher__hint {
+  margin-left: auto;
+  color: #6b7280;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* ============ Шапка ============ */
 .topbar {
   display: flex;
@@ -325,23 +373,98 @@ button {
   gap: 16px;
 }
 
-/* --- Фабула --- */
-.fabula-card {
+/* --- Карточка дела --- */
+.case-card {
   background: #f6f7f9;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 4px;
+  padding: 12px 14px;
   flex: none;
-}
-.fabula-card__text {
-  max-height: 300px;
+  max-height: 340px;
   overflow-y: auto;
-  padding: 10px 12px;
   font-size: 12.5px;
-  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.case-card__title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.case-card--empty .case-card__placeholder {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 18px 0 10px;
+}
+.case-card__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.case-card__section-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #5b6270;
+}
+.case-card__row {
+  display: flex;
+  gap: 8px;
   color: #3c4250;
 }
-.fabula-card__article { color: var(--text-muted); }
+.case-card__row span {
+  color: var(--text-muted);
+  min-width: 78px;
+  flex: none;
+}
+.case-card__episode {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.case-card__episode-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: #3c4250;
+}
+.case-card__episode-text {
+  color: #5b6270;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.case-card__line {
+  background: var(--accent-soft-2);
+  border: 1px solid #dfe5fd;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.case-card__line-title {
+  color: var(--accent);
+  font-weight: 700;
+}
+.case-card__line-thesis {
+  color: #5b6270;
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.case-card__list {
+  padding-left: 18px;
+  color: #3c4250;
+  line-height: 1.6;
+}
+
+/* Подсветка нового элемента (эпизод, линия, блок) */
+@keyframes flash-bg {
+  0% { box-shadow: 0 0 0 3px rgba(245, 166, 35, .55); }
+  100% { box-shadow: 0 0 0 3px rgba(245, 166, 35, 0); }
+}
+.flash { animation: flash-bg 1.5s ease-out; }
 
 /* --- Лента ассистента --- */
 #assistant-feed {
@@ -358,6 +481,22 @@ button {
   border-radius: 12px 12px 4px 12px;
   padding: 9px 12px;
   max-width: 85%;
+}
+.msg--pre { white-space: pre-line; }
+.msg--file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+.msg--file svg { width: 16px; height: 16px; flex: none; }
+.msg--demo {
+  background: #fff8ea;
+  border: 1px dashed #e8c377;
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: #8a6d2f;
+  font-size: 12px;
 }
 .msg--thinking { color: var(--text-muted); }
 .msg--thinking .dots::after {
@@ -399,6 +538,34 @@ button {
   height: 13px;
   flex: none;
 }
+.chip__sub {
+  display: block;
+  color: #7a86c9;
+  font-size: 11px;
+  margin-top: 3px;
+  line-height: 1.45;
+}
+.chip--episode .chip__sub {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Группа отвечена: замораживаем, выбранный чип подсвечиваем */
+.chips.is-answered .chip {
+  pointer-events: none;
+  opacity: .45;
+}
+.chips.is-answered .chip.is-chosen {
+  opacity: 1;
+  background: var(--accent);
+  color: #fff;
+}
+.chips.is-answered .chip.is-chosen .chip__sub { color: #cdd6fb; }
+
+/* «Генерация»: чипы недоступны */
+#assistant-feed.is-busy .chip { pointer-events: none; opacity: .55; }
 
 /* ============ Ввод ============ */
 .assistant-input {
@@ -461,6 +628,7 @@ button {
   background: transparent;
 }
 .assistant-input__row textarea::placeholder { color: var(--text-muted); }
+.assistant-input__row textarea:disabled { background: transparent; opacity: .55; }
 
 .assistant-input__actions {
   display: flex;
