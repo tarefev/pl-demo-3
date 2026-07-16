@@ -390,6 +390,82 @@ button {
 .doc-pleas ol { padding-left: 24px; }
 .doc-pleas li { margin: 6px 0; }
 
+/* --- Плейсхолдеры структуры документа (ревизия 16.07.26) --- */
+.doc-ph {
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 10px;
+  padding: 13px 16px;
+  margin: 14px 0;
+  transition: border-color .15s, background .15s;
+}
+.doc-ph:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft-2);
+}
+.doc-ph__title {
+  font-weight: 700;
+  color: #5b6270;
+}
+.doc-ph:hover .doc-ph__title { color: var(--accent); }
+.doc-ph__actions {
+  display: none;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.doc-ph:hover .doc-ph__actions { display: flex; }
+.doc-ph__actions button {
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12.5px;
+}
+.doc-ph__actions button:hover { background: #e2e8fd; }
+.doc-ph__note {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  align-self: center;
+}
+
+/* просительная часть: рамка без интерактива, подпись видна сразу */
+.doc-ph--static:hover { border-color: var(--border-strong); background: transparent; }
+.doc-ph--static:hover .doc-ph__title { color: #5b6270; }
+.doc-ph--static .doc-ph__note { display: block; margin-top: 6px; }
+
+/* тёмно-жёлтый маркер текстового плейсхолдера */
+.ph-mark {
+  background: #f2d264;
+  color: #6b5300;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-style: italic;
+}
+
+/* --- Чеклист наполнения (строка состояния) --- */
+.doc-checklist {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfbfd;
+  font-size: 12px;
+  flex: none;
+}
+.doc-checklist[hidden] { display: none; }
+.check-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.check-item svg { width: 15px; height: 15px; flex: none; }
+.check-item--done { color: #1d7a4b; }
+.check-item--warn { color: #9a6b00; }
+.check-item--empty { color: var(--text-muted); }
+
 .doc-empty {
   border: 1px dashed var(--border-strong);
   border-radius: 10px;
