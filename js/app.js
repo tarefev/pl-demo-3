@@ -99,7 +99,67 @@ function resetDemo(tabIndex) {
 
 /* ================= Документ ================= */
 
-const SECTION_ORDER = ['facts', 'admission', 'law', 'defense'];
+const SECTION_ORDER = ['verdict', 'facts', 'admission', 'law', 'defense'];
+
+/** Короткое имя линии для панели блока. */
+const shortLineTitle = t => (t || '').replace(/^Линия \d+:\s*/, '').split(' — ')[0];
+
+/**
+ * Панель состава и действий внутри блока (ревизия для v3):
+ * вместо ховер-звёздочки — видимые флаги (линия/доказательства/аргументы) и кнопки.
+ */
+function buildBlockMeta(block) {
+  const meta = document.createElement('div');
+  meta.className = 'doc-block__meta';
+  meta.contentEditable = 'false';
+
+  const isDefense = (block.section || 'defense') === 'defense';
+  let flagsHtml = '';
+  let tools;
+
+  if (isDefense) {
+    const line = state.card.lines.find(l => l.id === block.lineId) || null;
+    const evCount = (block.evidence || []).length;
+    flagsHtml = `
+      <span class="meta-flag ${line ? '' : 'meta-flag--warn'}">${line ? 'Линия: ' + shortLineTitle(line.title) : 'Линия защиты не привязана'}</span>
+      <span class="meta-flag ${evCount ? '' : 'meta-flag--warn'}">${evCount ? 'Доказательства: ' + evCount : 'Нет привязанных доказательств'}</span>
+      <span class="meta-flag ${line ? '' : 'meta-flag--warn'}">${line ? 'Аргументы: есть' : 'Нет аргументов'}</span>`;
+    tools = [
+      line ? ['practice', 'Практика'] : ['bind-line', 'Привязать линию'],
+      ['bind-evidence', 'Доказательства'],
+      ['rewrite', 'Скорректировать'],
+      ['shorter', 'Короче'],
+      ['longer', 'Подробнее'],
+      ['ask-question', 'Вопрос']
+    ];
+  } else {
+    tools = [
+      ['rewrite', 'Скорректировать'],
+      ['shorter', 'Короче'],
+      ['longer', 'Подробнее'],
+      ['ask-question', 'Вопрос']
+    ];
+  }
+
+  meta.innerHTML = `
+    ${flagsHtml ? `<div class="doc-block__flags">${flagsHtml}</div>` : ''}
+    <div class="doc-block__tools">${tools.map(([id, label]) =>
+      `<button data-tool="${id}">${label}</button>`).join('')}</div>`;
+
+  meta.querySelectorAll('button[data-tool]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.tool;
+      setActiveBlock(block.id);
+      if (id === 'ask-question') {
+        promptEl.focus();
+        return;
+      }
+      onStarAction({ id, label: BLOCK_ACTION_LABELS[id] || btn.textContent, needsBlock: id !== 'practice' });
+    });
+  });
+  return meta;
+}
 
 function renderBlocks() {
   docBlocksEl.innerHTML = '';
@@ -116,10 +176,8 @@ function renderBlocks() {
       <span class="doc-block__label" contenteditable="false">${block.label}</span>
       <button class="doc-block__status ${block.status === 'done' ? 'is-done' : ''}"
               contenteditable="false" title="Статус блока" tabindex="-1"></button>
-      <button class="doc-block__star" contenteditable="false" title="Действия по блоку" tabindex="-1">
-        <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.3L19 10l-5.1 1.7L12 17l-1.9-5.3L5 10l5.1-1.7z" fill="currentColor"/><path d="M19 15l.9 2.4L22 18l-2.1.7L19 21l-.9-2.3L16 18l2.1-.6z" fill="currentColor"/></svg>
-      </button>
       ${block.html}`;
+    el.appendChild(buildBlockMeta(block));
     el.addEventListener('focusin', () => setActiveBlock(block.id));
     el.addEventListener('click', () => setActiveBlock(block.id));
     // правки пользователя в редакторе сохраняются в стейт и переживают перерисовку
@@ -127,14 +185,9 @@ function renderBlocks() {
       const copy = el.cloneNode(true);
       copy.querySelector('.doc-block__label')?.remove();
       copy.querySelector('.doc-block__status')?.remove();
-      copy.querySelector('.doc-block__star')?.remove();
+      copy.querySelector('.doc-block__meta')?.remove();
       block.html = copy.innerHTML;
       updateChecklist();
-    });
-    el.querySelector('.doc-block__star').addEventListener('click', e => {
-      e.stopPropagation();
-      setActiveBlock(block.id);
-      openBlockMenu(block, e.currentTarget);
     });
     docBlocksEl.appendChild(el);
   };
@@ -150,11 +203,12 @@ function renderBlocks() {
   }
 
   // документ со структурой: секции по порядку, пустая секция = рамка-плейсхолдер
+  // (секции-шаблоны, template: true, рамок не имеют — заполняются текстом сразу)
   SECTION_ORDER.forEach(sec => {
     const secBlocks = state.blocks.filter(b => (b.section || 'defense') === sec);
     const ph = state.structure.find(p => p.kind === sec);
     if (secBlocks.length) secBlocks.forEach(renderBlockEl);
-    else if (ph) docBlocksEl.appendChild(buildPlaceholder(ph));
+    else if (ph && !ph.template) docBlocksEl.appendChild(buildPlaceholder(ph));
   });
   updateChecklist();
 }
@@ -210,6 +264,8 @@ function addPlea(text) {
 const factsFilled = () => state.blocks.some(b => (b.section || 'defense') === 'facts');
 
 const PH_ACTION_TITLES = {
+  'verdict-card': 'Заполнить описание приговора',
+  'verdict-own': 'Описание приговора своими словами',
   'facts-card': 'Заполнить обстоятельства из карточки дела',
   'facts-verdict': 'Разбор файла',
   'facts-own': 'Заполнить обстоятельства своими словами',
@@ -226,7 +282,11 @@ function buildPlaceholder(ph) {
   el.dataset.kind = ph.kind;
 
   let actionsHtml = '';
-  if (ph.kind === 'facts') {
+  if (ph.kind === 'verdict') {
+    actionsHtml =
+      (state.card.verdict ? '<button data-act="verdict-card">Заполнить из карточки дела</button>' : '') +
+      '<button data-act="verdict-own">Заполнить своими словами</button>';
+  } else if (ph.kind === 'facts') {
     actionsHtml =
       (state.card.episodes.length ? '<button data-act="facts-card">Заполнить из карточки дела</button>' : '') +
       '<button data-act="facts-verdict">Заполнить из приговора</button>' +
@@ -265,6 +325,17 @@ function onPlaceholderAction(act) {
 
 async function runPlaceholderAction(act) {
   switch (act) {
+    case 'verdict-card':
+      await think('Формирую описание приговора', 1500);
+      insertBlock(composeVerdictText(), { atStart: true, section: 'verdict', kind: 'verdict' });
+      addMessage('assistant', 'Описание приговора заполнено из карточки дела.');
+      break;
+
+    case 'verdict-own':
+      insertBlock('<span class="ph-mark">Опишите приговор первой инстанции</span>', { atStart: true, section: 'verdict', kind: 'verdict-own' });
+      addMessage('assistant', 'Заполните описание приговора самостоятельно в документе.');
+      break;
+
     case 'facts-card':
       state.factsSource = 'card';
       await think('Формирую описание обстоятельств из карточки дела', 1600);
@@ -375,15 +446,42 @@ function updateChecklist() {
   ).join('');
 }
 
-/** Текст блока по линии: генерация + практика, если она есть в карточке дела. */
+/**
+ * Текст блока по линии — сущности отдельными абзацами (ревизия v3):
+ * линия защиты, аргументы, нормативка, практика, обстоятельства.
+ * Доказательства добавляются своим абзацем при привязке (16.1).
+ */
 function composeBlockText(line) {
-  let text = line.generatedText || REGEN_FALLBACK_TEXT;
+  const paras = [];
+  paras.push(`<p><b>Линия защиты:</b> ${shortLineTitle(line.title)}${line.thesis ? '. Тезис: ' + line.thesis : ''}</p>`);
+  paras.push(`<p><b>Аргументы:</b> ${line.argument || line.thesis || REGEN_FALLBACK_TEXT}</p>`);
+  if (line.norms) paras.push(`<p><b>Нормативное обоснование:</b> ${line.norms}</p>`);
   const practice = state.card.practice;
   if (practice && practice.length) {
-    const refs = practice.slice(0, 2).map(p => `${p.num} (${p.court})`).join(', ');
-    text += ` Аналогичная позиция подтверждается судебной практикой: ${refs}.`;
+    paras.push(`<p><b>Практика:</b> ${practice.slice(0, 2).map(p => `${p.num} (${p.court}) — ${p.result.toLowerCase()}`).join('; ')}.</p>`);
   }
-  return text;
+  if (state.card.circumstances && state.card.circumstances.length) {
+    paras.push(`<p><b>Обстоятельства:</b> ${state.card.circumstances.join('; ')}.</p>`);
+  }
+  return paras.join('');
+}
+
+/** Описание приговора первой инстанции (для кассации — плюс апелляционное определение). */
+function composeVerdictText() {
+  const c = state.card;
+  const v = c.verdict || {};
+  const mark = t => `<span class="ph-mark">${t}</span>`;
+  const client = c.client || mark('указать ФИО осуждённого');
+  const parts = [
+    `Приговором ${v.courtName || mark('указать суд')} от ${v.date || mark('указать дату')} ` +
+    `${client}${v.born ? ', ' + v.born + ',' : ''} признан виновным в совершении преступления, ` +
+    `предусмотренного ${v.qualification || mark('указать квалификацию')}, и ему назначено наказание ` +
+    `в виде ${v.sentence || mark('указать наказание')}.`
+  ];
+  if (state.docType && state.docType.key === 'cassation') {
+    parts.push(c.appellateRuling || mark('Опишите апелляционное определение'));
+  }
+  return parts.map(p => `<p>${p}</p>`).join('');
 }
 
 function setActiveBlock(id) {
@@ -884,16 +982,57 @@ async function finalizeDocType(type, title) {
       '. Наведите на рамку в документе, чтобы заполнить её.');
   }
 
-  // 2.1 апелляция/кассация/позиция → сценарий 17
-  if (type.key === 'appeal' || type.key === 'cassation' || type.key === 'position') {
+  // 2.1 апелляция/кассация: следующим шагом предлагаем загрузить документы (или пропустить)
+  if (type.key === 'appeal' || type.key === 'cassation') {
+    const sc = state.scenario;
+    sc.id = 'upload-docs';
+    sc.title = type.key === 'appeal' ? 'Загрузка приговора' : 'Загрузка приговора и апелляционного определения';
+    sc.uninterruptible = false;
+    updateScenarioBanner();
+
+    const goGen = () => {
+      state.scenario = null;
+      renderContextChip();
+      startScenario('gen-by-lines', 'Генерация текста по линиям защиты');
+      runGenByLines();
+    };
+
+    offerChoices([
+      {
+        label: type.key === 'appeal' ? 'Загрузить приговор' : 'Загрузить документы',
+        onPick: () => {
+          addMessage('user', type.key === 'appeal' ? 'Загрузить приговор' : 'Загрузить документы');
+          state.scenario = null;
+          renderContextChip();
+          runDocxScenario();
+        }
+      },
+      {
+        label: 'Пропустить',
+        ghost: true,
+        onPick: () => {
+          addMessage('user', 'Пропустить');
+          goGen();
+        }
+      }
+    ], type.key === 'appeal'
+      ? 'Следующим шагом загрузите приговор первой инстанции — я разберу его и заполню карточку дела и структуру документа. Либо пропустите этот шаг.'
+      : 'Следующим шагом загрузите приговор первой инстанции и апелляционное определение — я разберу их и заполню карточку дела и структуру документа. Либо пропустите этот шаг.');
+    return;
+  }
+
+  // позиция защиты → сразу сценарий 17
+  if (type.key === 'position') {
     state.scenario = null;
     startScenario('gen-by-lines', 'Генерация текста по линиям защиты');
     runGenByLines();
     return;
   }
 
-  // 2.2 ходатайство → сценарий 18
+  // 2.2 ходатайство → текстовый шаблон с плейсхолдерами + сценарий 18
   if (type.key === 'motion') {
+    insertMotionTemplate();
+    addMessage('assistant', 'В документ вставлен шаблон ходатайства — незаполненные места отмечены жёлтым.');
     const sc = state.scenario;
     sc.id = 'motion';
     sc.title = 'Подготовка ходатайства';
@@ -908,12 +1047,38 @@ async function finalizeDocType(type, title) {
   startHelp();
 }
 
-/** Сценарий 18: генерация текста ходатайства по введённым деталям. */
+/** Шаблон ходатайства: текст с плейсхолдерами по данным карточки (чего нет — жёлтым). */
+function insertMotionTemplate() {
+  const c = state.card;
+  const mark = t => `<span class="ph-mark">${t}</span>`;
+  const caseNum = c.court && c.court.caseNum ? `№ ${c.court.caseNum}` : mark('указать номер дела');
+  const courtName = c.court && c.court.appeal ? 'Киевского районного суда г. Симферополя' : mark('указать суд или орган');
+  const client = c.clientGen || mark('указать ФИО доверителя');
+  const qual = c.episodes[0] && c.episodes[0].qualification ? c.episodes[0].qualification : mark('указать квалификацию');
+
+  insertBlock(
+    `<p>В производстве ${courtName} находится уголовное дело ${caseNum} в отношении ${client}, обвиняемого в совершении преступления, предусмотренного ${qual}.</p>` +
+    `<p>${mark('Изложите обстоятельства, обосновывающие ходатайство')}</p>`,
+    { section: 'facts', kind: 'motion-tpl' });
+
+  insertBlock(MOTION_LAW_TEXT, { section: 'law', kind: 'law' });
+}
+
+/** Сценарий 18: детали от пользователя заполняют плейсхолдер обоснования в шаблоне. */
 async function onMotionDetails(text) {
   await think('Генерирую текст ходатайства', 2000);
-  insertBlock(`${text.charAt(0).toUpperCase()}${text.slice(1)}. Изложенные обстоятельства имеют существенное значение для дела и подтверждаются его материалами (статьи 119, 120 УПК РФ).`, { section: 'facts', kind: 'motion-facts' });
+  const filled = `${text.charAt(0).toUpperCase()}${text.slice(1)}. Изложенные обстоятельства имеют существенное значение для дела и подтверждаются его материалами (статьи 119, 120 УПК РФ).`;
+
+  const tpl = state.blocks.find(b => b.kind === 'motion-tpl');
+  if (tpl) {
+    tpl.html = tpl.html.replace(/<span class="ph-mark">Изложите обстоятельства[^<]*<\/span>/, filled);
+    renderBlocks();
+    flashBlock(tpl.id);
+  } else {
+    insertBlock(filled, { section: 'facts', kind: 'motion-facts' });
+  }
   addPlea(PLEA_MOTION);
-  endScenario('Обоснование ходатайства добавлено в документ, просительная часть сформирована. Правовое обоснование можно заполнить через рамку в документе.');
+  endScenario('Обоснование ходатайства заполнено, просительная часть сформирована.');
   startHelp();
 }
 
@@ -1073,7 +1238,7 @@ async function createLine(episode, title, thesis) {
     episodeId: episode ? episode.id : null,
     title: title || 'Новая линия защиты (без названия)',
     thesis: thesis || 'Тезис сформирован автоматически по материалам практики.',
-    generatedText: REGEN_FALLBACK_TEXT
+    argument: REGEN_FALLBACK_TEXT
   };
   state.card.lines.push(line);
   addMessage('assistant', `Линия защиты сохранена в карточку дела: «${line.title}».`);
@@ -1171,7 +1336,7 @@ async function createLine6(episode, title, thesis) {
     episodeId: episode ? episode.id : null,
     title: title || 'Новая линия защиты (без названия)',
     thesis: thesis || 'Тезис сформирован автоматически по материалам практики.',
-    generatedText: REGEN_FALLBACK_TEXT
+    argument: REGEN_FALLBACK_TEXT
   };
   state.card.lines.push(line);
 
@@ -1343,6 +1508,13 @@ async function runGenByLines() {
     factsAdded = true;
   }
 
+  // описание приговора (апелляция/кассация) — самой первой секцией
+  if (state.structure && state.structure.some(p => p.kind === 'verdict') && state.card.verdict
+      && !state.blocks.some(b => (b.section || 'defense') === 'verdict')) {
+    await think('Формирую описание приговора', 1400);
+    insertBlock(composeVerdictText(), { atStart: true, section: 'verdict', kind: 'verdict' });
+  }
+
   setStep('17.4');
   endScenario(
     (factsAdded ? 'Сутевая часть по фабуле дела вставлена первым блоком. ' : '') +
@@ -1391,13 +1563,17 @@ function onAttachClick() {
   runDocxScenario();
 }
 
-/** Общий пайплайн разбора приговора (шаги 3.1–3.4). */
+/** Общий пайплайн разбора приговора (шаги 3.1–3.4). Для кассации — плюс апелляционное определение. */
 async function runDocxPipeline() {
+  const isCassation = state.docType && state.docType.key === 'cassation';
   addFileMessage(DOCX_FILE_NAME);
+  if (isCassation) addFileMessage(DOCX_FILE_NAME_APPEAL_RULING);
 
   setStep('3.1');
-  await think('Проверяю, приговор ли это первой инстанции', 1500);
-  addMessage('assistant', 'Это приговор первой инстанции — продолжаю разбор.');
+  await think(isCassation ? 'Проверяю приложенные документы' : 'Проверяю, приговор ли это первой инстанции', 1500);
+  addMessage('assistant', isCassation
+    ? 'Это приговор первой инстанции и апелляционное определение — продолжаю разбор.'
+    : 'Это приговор первой инстанции — продолжаю разбор.');
 
   setStep('3.2');
   await think('Разбираю документ: доверитель, фабула, доказательства, стадии, участники, обстоятельства, линии защиты', 3000);
@@ -1606,15 +1782,38 @@ const stripTags = html => {
   return d.textContent.replace(/\s+/g, ' ').trim();
 };
 
-/** 16.5 / 16.7 — короче/подробнее без вопросов и подтверждений. */
+/** 16.5 / 16.7 — короче/подробнее без вопросов и подтверждений (учитывает абзацы-сущности). */
 async function rewriteBlockAuto(block, mode) {
   await think(mode === 'shorter' ? 'Переписываю блок короче' : 'Переписываю блок подробнее', 1800);
-  const text = stripTags(block.html);
-  if (mode === 'shorter') {
-    const sentences = text.split('. ');
-    block.html = sentences.slice(0, 2).join('. ') + (sentences.length > 2 ? '.' : '');
+
+  const d = document.createElement('div');
+  d.innerHTML = block.html;
+  const paras = [...d.querySelectorAll('p')];
+
+  if (paras.length) {
+    if (mode === 'shorter') {
+      // каждый абзац-сущность сокращаем до первого предложения, сохраняя подпись
+      paras.forEach(p => {
+        const label = p.querySelector('b');
+        const labelHtml = label ? label.outerHTML + ' ' : '';
+        const text = p.textContent.replace(label ? label.textContent : '', '').replace(/\s+/g, ' ').trim();
+        const first = text.split('. ')[0];
+        p.innerHTML = labelHtml + first + (first.endsWith('.') ? '' : '.');
+      });
+    } else {
+      const extra = document.createElement('p');
+      extra.innerHTML = '<b>Дополнительно:</b> ' + DETAIL_SENTENCE.replace(/\s+/g, ' ').trim();
+      d.appendChild(extra);
+    }
+    block.html = d.innerHTML;
   } else {
-    block.html = text + ' ' + DETAIL_SENTENCE.replace(/\s+/g, ' ').trim();
+    const text = stripTags(block.html);
+    if (mode === 'shorter') {
+      const sentences = text.split('. ');
+      block.html = sentences.slice(0, 2).join('. ') + (sentences.length > 2 ? '.' : '');
+    } else {
+      block.html = text + ' ' + DETAIL_SENTENCE.replace(/\s+/g, ' ').trim();
+    }
   }
   block.htmlBase = null;
   renderBlocks();
@@ -1706,7 +1905,7 @@ async function applyEvidence(block) {
   if (!block.htmlBase) block.htmlBase = block.html;
   const list = selected.map(i => state.card.evidence[i]);
   block.html = block.htmlBase + (list.length
-    ? ` Изложенное подтверждается: ${list.map(e => e.charAt(0).toLowerCase() + e.slice(1)).join('; ')}.`
+    ? `<p><b>Доказательства:</b> ${list.join('; ')}.</p>`
     : '');
   renderBlocks();
   flashBlock(block.id);
