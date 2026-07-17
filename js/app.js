@@ -43,6 +43,7 @@ const state = {
   boundLines: null,    // Set id линий, уже привязанных к блокам
   warnExplained: false, // объяснение про «!» у блоков уже показано в чате
   activeBlockId: null,
+  activeSubpart: null, // { blockId, key, title } — подблок конструктора в контексте чата
   docType: null,       // { key, label } после стартового сценария
   scenario: null,      // { id, title, stage: 'choices'|'text', chipsSpec, chipsEl, onText, reaskText, uninterruptible }
   busy: false
@@ -76,6 +77,7 @@ function resetDemo(tabIndex) {
   state.factsSource = null;
   state.boundLines = new Set();
   state.warnExplained = false;
+  state.activeSubpart = null;
   state.activeBlockId = null;
   state.docType = null;
   state.scenario = null;
@@ -156,7 +158,7 @@ function buildBlockMeta(block) {
   }
 
   const rightHtml = isCtor ? `
-    <button class="meta-regen${block.constructorDone ? ' is-hidden' : ''}" data-special="regen" ${block.dirty ? '' : 'disabled'}>Перегенерировать</button>
+    <button class="meta-regen" data-special="regen" ${block.dirty ? '' : 'disabled'}>Перегенерировать</button>
     <button data-special="ctor-toggle">${block.constructorDone ? 'Открыть конструктор' : 'Закрыть конструктор для блока'}</button>` : '';
 
   meta.innerHTML = `
@@ -206,6 +208,12 @@ function buildConstructor(block) {
       part.html = body.innerHTML;
       markDirty(block, part.title);
     });
+    // клик по подблоку кладёт его в контекст чата — можно отредактировать с ИИ
+    body.addEventListener('click', e => {
+      e.stopPropagation();
+      setActiveBlock(block.id);
+      setActiveSubpart({ blockId: block.id, key: part.key, title: part.title });
+    });
     ctor.appendChild(sub);
   });
   return ctor;
@@ -226,6 +234,9 @@ function buildGenerated(block) {
   return gen;
 }
 
+/** «Блок 3» → «Блока 3» для отбивок в чат. */
+const labelGen = label => (label || '').replace(/^Блок /, 'Блока ');
+
 /** Ручное изменение конструктора: активируем «Перегенерировать», одно уведомление в чат. */
 function markDirty(block, what) {
   block.dirty = true;
@@ -233,28 +244,25 @@ function markDirty(block, what) {
   if (btn) btn.disabled = false;
   if (!block.dirtyNotified) {
     block.dirtyNotified = true;
-    addMessage('assistant', `Изменён конструктор ${block.label}: ${what.toLowerCase()}. Кнопка «Перегенерировать» стала активна.`);
+    addMessage('assistant', `Изменён конструктор ${labelGen(block.label)}: ${what.toLowerCase()}. Кнопка «Перегенерировать» стала активна.`);
   }
   updateChecklist();
 }
 
 async function onRegenerateClick(block) {
   if (state.busy || !block.dirty) return;
-  await think(`Перегенерирую текст ${block.label}`, 1800);
+  await think(`Перегенерирую текст ${labelGen(block.label)}`, 1800);
   block.generated = generateFromParts(block.parts);
   block.dirty = false;
   block.dirtyNotified = false;
   renderBlocks();
   flashBlock(block.id);
-  addMessage('assistant', `Текст ${block.label} перегенерирован по данным конструктора.`);
+  addMessage('assistant', `Текст ${labelGen(block.label)} перегенерирован по данным конструктора.`);
 }
 
 function toggleConstructor(block) {
   block.constructorDone = !block.constructorDone;
   renderBlocks();
-  addMessage('assistant', block.constructorDone
-    ? `Конструктор ${block.label} закрыт — сводка и кнопки управления остались, вернуть можно кнопкой «Открыть конструктор».`
-    : `Конструктор ${block.label} снова открыт.`);
 }
 
 function renderBlocks() {
@@ -302,16 +310,43 @@ function renderBlocks() {
     }
 
     el.addEventListener('focusin', () => setActiveBlock(block.id));
-    el.addEventListener('click', () => setActiveBlock(block.id));
+    el.addEventListener('click', () => {
+      setActiveBlock(block.id);
+      if (state.activeSubpart && state.activeSubpart.blockId === block.id) setActiveSubpart(null);
+    });
     docBlocksEl.appendChild(el);
+  };
+
+  // точка вставки нового блока между блоками (появляется при наведении, «+» слева)
+  const addInsertZone = afterBlock => {
+    const z = document.createElement('div');
+    z.className = 'doc-insert';
+    z.contentEditable = 'false';
+    z.innerHTML = '<div class="doc-insert__line"></div><button class="doc-insert__btn" title="Создать блок здесь">+</button>';
+    z.querySelector('button').addEventListener('click', e => {
+      e.stopPropagation();
+      insertEmptyBlock(afterBlock.id, afterBlock.section || 'defense');
+    });
+    docBlocksEl.appendChild(z);
+  };
+
+  // постоянная точка вставки в конце, перед просительной частью
+  const appendAddBlockButton = () => {
+    const btn = document.createElement('button');
+    btn.className = 'doc-add-block';
+    btn.textContent = '+ Новый блок';
+    btn.title = 'Добавить блок в конец документа, перед просительной частью';
+    btn.addEventListener('click', () => insertEmptyBlock(null, 'defense'));
+    docBlocksEl.appendChild(btn);
   };
 
   if (!state.structure) {
     if (!state.blocks.length) {
       docBlocksEl.innerHTML = '<div class="doc-empty">В документе пока нет блоков — текст появится по мере работы сценариев</div>';
     } else {
-      state.blocks.forEach(renderBlockEl);
+      state.blocks.forEach(b => { renderBlockEl(b); addInsertZone(b); });
     }
+    appendAddBlockButton();
     updateChecklist();
     return;
   }
@@ -321,10 +356,21 @@ function renderBlocks() {
   SECTION_ORDER.forEach(sec => {
     const secBlocks = state.blocks.filter(b => (b.section || 'defense') === sec);
     const ph = state.structure.find(p => p.kind === sec);
-    if (secBlocks.length) secBlocks.forEach(renderBlockEl);
+    if (secBlocks.length) secBlocks.forEach(b => { renderBlockEl(b); addInsertZone(b); });
     else if (ph && !ph.template) docBlocksEl.appendChild(buildPlaceholder(ph));
   });
+  appendAddBlockButton();
   updateChecklist();
+}
+
+/** Пустой блок в указанном месте: сразу активен, можно печатать или привязать линию. */
+function insertEmptyBlock(afterId, section) {
+  const opts = afterId ? { afterId, section, kind: 'manual' } : { section, kind: 'manual' };
+  const id = insertBlock('', opts);
+  setActiveBlock(id);
+  const el = document.querySelector(`.doc-block[data-block-id="${id}"]`);
+  if (el) el.focus();
+  addMessage('assistant', `Добавлен пустой ${getBlock(id).label} — введите текст прямо в документе или привяжите линию защиты.`);
 }
 
 /* ================= Просительная часть ================= */
@@ -666,8 +712,14 @@ function composeVerdictText() {
 function setActiveBlock(id) {
   if (state.activeBlockId === id) return;
   state.activeBlockId = id;
+  state.activeSubpart = null;
   document.querySelectorAll('.doc-block').forEach(el =>
     el.classList.toggle('is-active', el.dataset.blockId === id));
+  renderContextChip();
+}
+
+function setActiveSubpart(sp) {
+  state.activeSubpart = sp;
   renderContextChip();
 }
 
@@ -779,13 +831,16 @@ function renderContextChip() {
 
   const chip = document.createElement('span');
   chip.className = 'context-chip';
+  const sp = state.activeSubpart;
+  const chipLabel = block.label + (sp && sp.blockId === block.id ? ' · ' + sp.title : '');
   // пока идёт сценарий — пилз блока без крестика
-  chip.innerHTML = state.scenario ? block.label : `${block.label}
+  chip.innerHTML = state.scenario ? chipLabel : `${chipLabel}
     <button title="Отвязать блок">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`;
   const closeBtn = chip.querySelector('button');
   if (closeBtn) closeBtn.addEventListener('click', () => {
     state.activeBlockId = null;
+    state.activeSubpart = null;
     document.querySelectorAll('.doc-block').forEach(el => el.classList.remove('is-active'));
     renderContextChip();
   });
@@ -1070,6 +1125,7 @@ async function routeText(text) {
   // Сценарий не запущен (состояние C)
   if (!sc) {
     if (trigger) return launchScenario(trigger);
+    if (state.activeSubpart) return editSubpartWithAI(text);
     return onFreeInput(text);
   }
 
@@ -1102,6 +1158,27 @@ async function routeText(text) {
     sc.onText = null;
     return handler(text);
   }
+}
+
+/** Редактирование активного подблока конструктора с ИИ по запросу из чата. */
+async function editSubpartWithAI(text) {
+  const sp = state.activeSubpart;
+  const block = getBlock(sp.blockId);
+  const part = block && block.parts ? block.parts.find(p => p.key === sp.key) : null;
+  if (!block || !part) {
+    setActiveSubpart(null);
+    return onFreeInput(text);
+  }
+
+  await think(`Редактирую подблок «${part.title}» ${labelGen(block.label)}`, 1600);
+  const base = stripTags(part.html).replace(/\s+/g, ' ').trim();
+  const lead = base.split('. ').slice(0, 2).join('. ').replace(/\.?$/, '.');
+  part.html = `${lead} Дополнительно учтено: ${text.charAt(0).toLowerCase()}${text.slice(1).replace(/\.?$/, '.')}`;
+  block.dirty = true;
+  block.dirtyNotified = true;
+  renderBlocks();
+  flashBlock(block.id);
+  addMessage('assistant', `Подблок «${part.title}» ${labelGen(block.label)} отредактирован с учётом запроса. Кнопка «Перегенерировать» стала активна.`);
 }
 
 async function onFreeInput(text) {
@@ -2030,7 +2107,7 @@ async function onRewriteBlock(block, request) {
   }
   renderBlocks();
   flashBlock(block.id);
-  endScenario(`Текст ${block.label} отредактирован согласно вашему запросу.`);
+  endScenario(`Текст ${labelGen(block.label)} отредактирован согласно вашему запросу.`);
 }
 
 /* ---------- Модалки ---------- */
