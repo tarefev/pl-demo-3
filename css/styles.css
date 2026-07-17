@@ -259,9 +259,17 @@ button {
 }
 .doc-block:first-child { border-top: 1px solid var(--border-strong); }
 
+/* sticky-обёртка: метка и статус прилипают при скролле длинного блока */
+.doc-block__pin {
+  position: sticky;
+  top: 34px;
+  height: 0;
+  z-index: 6;
+}
+
 .doc-block__label {
   position: absolute;
-  top: -9px;
+  top: -25px;
   left: 50%;
   transform: translateX(-50%);
   background: #6b7280;
@@ -286,7 +294,7 @@ button {
 .doc-block__status {
   position: absolute;
   right: -28px;
-  top: 18px;
+  top: 2px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
