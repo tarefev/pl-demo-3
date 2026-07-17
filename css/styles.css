@@ -308,6 +308,55 @@ button {
 .doc-block ol { padding-left: 22px; }
 .doc-block li { margin: 4px 0; }
 
+/* Конструктор блока: подблоки-сущности (итерация 2) */
+.doc-constructor {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin: 2px 0 4px;
+}
+.doc-sub__title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.doc-sub__body {
+  border-left: 2px solid transparent;
+  border-radius: 4px;
+  padding: 3px 8px 3px 10px;
+  margin-left: -10px;
+  line-height: 1.55;
+  outline: none;
+  transition: background .15s, border-color .15s;
+}
+.doc-sub__body:focus {
+  background: var(--accent-soft-2);
+  border-left-color: var(--accent);
+}
+
+/* Сгенерированный текст под конструктором */
+.doc-generated {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.doc-generated__body {
+  outline: none;
+  line-height: 1.6;
+  min-height: 1.5em;
+  border-radius: 4px;
+  transition: background .15s;
+}
+.doc-generated__body:focus { background: #fbfbfd; }
+.doc-generated__body:empty::before {
+  content: attr(data-ph);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* Панель состава и действий внутри блока (v3) */
 .doc-block__meta {
   margin-top: 12px;
@@ -342,6 +391,14 @@ button {
 .doc-block__tools {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+.doc-block__tools-left,
+.doc-block__tools-right {
+  display: flex;
+  flex-wrap: wrap;
   gap: 5px;
 }
 .doc-block__tools button {
@@ -353,6 +410,18 @@ button {
   padding: 3px 9px;
 }
 .doc-block__tools button:hover { background: var(--accent-soft); }
+.doc-block__tools .meta-regen {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.doc-block__tools .meta-regen:hover { background: #2f49d1; }
+.doc-block__tools .meta-regen:disabled {
+  opacity: .4;
+  cursor: default;
+  background: var(--accent);
+}
 
 /* Ховер-звёздочка действий у блока */
 .doc-block__star {
