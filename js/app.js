@@ -84,6 +84,12 @@ function resetDemo(tabIndex) {
   autosize();
   setBusy(false);
 
+  const cb = $('#text-only-cb');
+  if (cb) {
+    cb.checked = false;
+    document.body.classList.remove('text-only');
+  }
+
   topbarTitleEl.textContent = 'Новый документ';
   docTitleEl.textContent = 'Новый документ';
   docHeaderBodyEl.innerHTML = '<p class="placeholder">Шапка документа сформируется после выбора типа</p>';
@@ -148,8 +154,8 @@ function buildBlockMeta(block) {
   }
 
   const rightHtml = isCtor ? `
-    <button class="meta-regen" data-special="regen" ${block.dirty ? '' : 'disabled'}>Перегенерировать</button>
-    <button data-special="ctor-toggle">${block.constructorDone ? 'Открыть конструктор' : 'Завершить конструктор для блока'}</button>` : '';
+    <button class="meta-regen${block.constructorDone ? ' is-hidden' : ''}" data-special="regen" ${block.dirty ? '' : 'disabled'}>Перегенерировать</button>
+    <button data-special="ctor-toggle">${block.constructorDone ? 'Открыть конструктор' : 'Закрыть конструктор для блока'}</button>` : '';
 
   meta.innerHTML = `
     ${flagsHtml ? `<div class="doc-block__flags">${flagsHtml}</div>` : ''}
@@ -245,7 +251,7 @@ function toggleConstructor(block) {
   block.constructorDone = !block.constructorDone;
   renderBlocks();
   addMessage('assistant', block.constructorDone
-    ? `Конструктор ${block.label} завершён — структура скрыта. Сводка и кнопки управления остались, вернуть можно кнопкой «Открыть конструктор».`
+    ? `Конструктор ${block.label} закрыт — сводка и кнопки управления остались, вернуть можно кнопкой «Открыть конструктор».`
     : `Конструктор ${block.label} снова открыт.`);
 }
 
@@ -267,11 +273,14 @@ function renderBlocks() {
               contenteditable="false" title="${issuesOk ? 'Готово' : 'По сводке блока чего-то не хватает'}" tabindex="-1"></button>`;
 
     if (block.parts && block.parts.length) {
-      // конструкторный блок: конструктор -> сводка/кнопки -> сгенерированный текст
+      // конструкторный блок: сводка/кнопки -> конструктор -> сгенерированный текст
+      // (кнопки сверху, чтобы «Закрыть/Открыть конструктор» не меняла положение)
       el.contentEditable = 'false';
       el.innerHTML = headHtml;
+      const meta = buildBlockMeta(block);
+      meta.classList.add('doc-block__meta--top');
+      el.appendChild(meta);
       if (!block.constructorDone) el.appendChild(buildConstructor(block));
-      el.appendChild(buildBlockMeta(block));
       el.appendChild(buildGenerated(block));
     } else {
       el.contentEditable = 'true';
@@ -2130,6 +2139,13 @@ promptEl.addEventListener('keydown', e => {
 });
 sendBtn.addEventListener('click', sendPrompt);
 attachBtn.addEventListener('click', onAttachClick);
+
+/* ================= Режим «только текст документа» ================= */
+
+const textOnlyCb = $('#text-only-cb');
+textOnlyCb.addEventListener('change', () => {
+  document.body.classList.toggle('text-only', textOnlyCb.checked);
+});
 
 /* ================= Шапка ================= */
 
