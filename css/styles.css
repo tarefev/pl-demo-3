@@ -431,6 +431,21 @@ button {
   padding: 3px 9px;
 }
 .doc-block__tools button:hover { background: var(--accent-soft); }
+.doc-block__tools .meta-btn--warn {
+  background: #fdf3e0;
+  border-color: #f0ddb0;
+  color: #9a6b00;
+}
+.doc-block__tools .meta-btn--warn::before { content: "⚠ "; }
+.doc-block__tools .meta-btn--warn:hover { background: #fae9c8; }
+.doc-block__tools .meta-btn--line {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modal-sub { color: var(--text-muted); }
+
 .doc-block__tools .meta-regen {
   background: var(--accent);
   border-color: var(--accent);

@@ -138,23 +138,23 @@ function buildBlockMeta(block) {
 
   const isCtor = !!(block.parts && block.parts.length);
   const isDefense = (block.section || 'defense') === 'defense' || isCtor;
-  let flagsHtml = '';
-  let toolsLeft;
+  let barBtns;
 
   if (isDefense) {
     const line = state.card.lines.find(l => l.id === block.lineId) || null;
     const evCount = (block.evidence || []).length;
-    flagsHtml = `
-      <span class="meta-flag ${line ? '' : 'meta-flag--warn'}">${line ? 'Линия: ' + shortLineTitle(line.title) : 'Линия защиты не привязана'}</span>
-      <span class="meta-flag ${evCount ? '' : 'meta-flag--warn'}">${evCount ? 'Доказательства: ' + evCount : 'Нет привязанных доказательств'}</span>
-      <span class="meta-flag ${line ? '' : 'meta-flag--warn'}">${line ? 'Аргументы: есть' : 'Нет аргументов'}</span>`;
-    toolsLeft = [
-      line ? ['practice', 'Практика'] : ['bind-line', 'Привязать линию'],
-      ['bind-evidence', 'Доказательства'],
-      ['rewrite', 'Редактировать с ИИ']
+    const argsPart = block.parts ? block.parts.find(p => p.key === 'arguments') : null;
+    const argsOk = !!(argsPart && stripTags(argsPart.html).trim());
+    // все флаги-кнопки и действия — в одну линию
+    barBtns = [
+      ['line-modal', line ? 'Линия: ' + shortLineTitle(line.title) : 'Линия защиты не привязана', !line, 'meta-btn--line'],
+      ['evidence-modal', evCount ? 'Доказательства: ' + evCount : 'Нет привязанных доказательств', !evCount, ''],
+      ['args-modal', argsOk ? 'Аргументы: есть' : 'Нет аргументов', !argsOk, ''],
+      ['practice-modal', 'Практика', false, ''],
+      ['rewrite', 'Редактировать с ИИ', false, '']
     ];
   } else {
-    toolsLeft = [['rewrite', 'Редактировать с ИИ']];
+    barBtns = [['rewrite', 'Редактировать с ИИ', false, '']];
   }
 
   const rightHtml = isCtor ? `
@@ -162,10 +162,9 @@ function buildBlockMeta(block) {
     <button data-special="ctor-toggle">${block.constructorDone ? 'Открыть конструктор' : 'Закрыть конструктор для блока'}</button>` : '';
 
   meta.innerHTML = `
-    ${flagsHtml ? `<div class="doc-block__flags">${flagsHtml}</div>` : ''}
     <div class="doc-block__tools">
-      <div class="doc-block__tools-left">${toolsLeft.map(([id, label]) =>
-        `<button data-tool="${id}">${label}</button>`).join('')}</div>
+      <div class="doc-block__tools-left">${barBtns.map(([id, label, warn, cls]) =>
+        `<button data-tool="${id}" class="${warn ? 'meta-btn--warn' : ''} ${cls}" title="${label}">${label}</button>`).join('')}</div>
       ${rightHtml ? `<div class="doc-block__tools-right">${rightHtml}</div>` : ''}
     </div>`;
 
@@ -174,11 +173,17 @@ function buildBlockMeta(block) {
       e.stopPropagation();
       const id = btn.dataset.tool;
       setActiveBlock(block.id);
-      if (id === 'ask-question') {
-        promptEl.focus();
-        return;
+      if (state.busy) return;
+      switch (id) {
+        case 'line-modal': openLineModal(block); return;
+        case 'args-modal': openArgsModal(block); return;
+        case 'practice-modal': openPracticeModal(block); return;
+        case 'evidence-modal':
+          onStarAction({ id: 'bind-evidence', label: BLOCK_ACTION_LABELS['bind-evidence'], needsBlock: true });
+          return;
+        default:
+          onStarAction({ id, label: BLOCK_ACTION_LABELS[id] || btn.textContent, needsBlock: id !== 'practice' });
       }
-      onStarAction({ id, label: BLOCK_ACTION_LABELS[id] || btn.textContent, needsBlock: id !== 'practice' });
     });
   });
   meta.querySelector('[data-special="regen"]')?.addEventListener('click', e => {
@@ -631,15 +636,25 @@ function updateChecklist() {
   ).join('');
 }
 
-/** Подблоки конструктора по линии защиты (итерация 2). */
-function buildLineParts(line) {
+/** Подблоки конструктора по линии защиты; sel — выбранные аргументы/дела практики. */
+function buildLineParts(line, sel = {}) {
   const parts = [];
   parts.push({ key: 'line', title: 'Линия защиты', html: `${shortLineTitle(line.title)}${line.thesis ? '. Тезис: ' + line.thesis : ''}` });
-  parts.push({ key: 'arguments', title: 'Аргументы', html: (line.argument || line.thesis || REGEN_FALLBACK_TEXT).replace(/\s+/g, ' ').trim() });
+
+  const pool = line.argumentsPool;
+  const argHtml = pool
+    ? (sel.selectedArgs || [0, 1]).filter(i => pool[i]).map(i => pool[i]).join(' ')
+    : (line.argument || line.thesis || REGEN_FALLBACK_TEXT).replace(/\s+/g, ' ').trim();
+  parts.push({ key: 'arguments', title: 'Аргументы', html: argHtml });
+
   if (line.norms) parts.push({ key: 'norms', title: 'Нормативное обоснование', html: line.norms });
+
   const practice = state.card.practice;
   if (practice && practice.length) {
-    parts.push({ key: 'practice', title: 'Практика', html: practice.slice(0, 2).map(p => `${p.num} (${p.court}) — ${p.result.toLowerCase()}`).join('; ') + '.' });
+    const pSel = (sel.selectedPractice || [0, 1]).filter(i => practice[i]);
+    if (pSel.length) {
+      parts.push({ key: 'practice', title: 'Практика', html: pSel.map(i => `${practice[i].num} (${practice[i].court}) — ${practice[i].result.toLowerCase()}`).join('; ') + '.' });
+    }
   }
   if (state.card.circumstances && state.card.circumstances.length) {
     parts.push({ key: 'circumstances', title: 'Обстоятельства', html: state.card.circumstances.join('; ') + '.' });
@@ -667,8 +682,50 @@ function generateFromParts(parts) {
 
 /** Вставка конструкторного блока по линии: конструктор + сразу сгенерированный текст. */
 function insertLineBlock(line, opts = {}) {
-  const parts = buildLineParts(line);
-  return insertBlock('', { ...opts, lineId: line.id, parts, generated: generateFromParts(parts) });
+  const selectedArgs = line.argumentsPool ? [0, 1].filter(i => line.argumentsPool[i]) : null;
+  const selectedPractice = state.card.practice && state.card.practice.length
+    ? [0, 1].filter(i => state.card.practice[i]) : null;
+  const parts = buildLineParts(line, { selectedArgs, selectedPractice });
+  const id = insertBlock('', { ...opts, lineId: line.id, parts, generated: generateFromParts(parts) });
+  const b = getBlock(id);
+  b.selectedArgs = selectedArgs;
+  b.selectedPractice = selectedPractice;
+  return id;
+}
+
+/** Привязка линии к блоку: полная перезаливка конструктора и текста. */
+function applyLineToBlock(block, line, { silent } = {}) {
+  block.lineId = line.id;
+  block.selectedArgs = line.argumentsPool ? [0, 1].filter(i => line.argumentsPool[i]) : null;
+  block.selectedPractice = state.card.practice && state.card.practice.length
+    ? [0, 1].filter(i => state.card.practice[i]) : null;
+  block.parts = buildLineParts(line, { selectedArgs: block.selectedArgs, selectedPractice: block.selectedPractice });
+  block.generated = generateFromParts(block.parts);
+  block.evidence = block.evidence || [];
+  block.dirty = false;
+  block.dirtyNotified = false;
+  block.constructorDone = false;
+  state.boundLines.add(line.id);
+  addPlea(line.plea || PLEA_FALLBACK);
+  renderBlocks();
+  flashBlock(block.id);
+  if (!silent) addMessage('assistant', `К ${labelGen(block.label).replace('Блока', 'Блоку')} привязана линия «${shortLineTitle(line.title)}» — конструктор и текст заполнены заново.`);
+}
+
+/** «Вся информация блока будет удалена» — блок становится пустым. */
+function clearBlockInfo(block) {
+  block.lineId = null;
+  block.parts = null;
+  block.generated = '';
+  block.html = '';
+  block.evidence = [];
+  block.selectedArgs = null;
+  block.selectedPractice = null;
+  block.dirty = false;
+  block.dirtyNotified = false;
+  block.constructorDone = false;
+  renderBlocks();
+  updateChecklist();
 }
 
 /**
@@ -1524,15 +1581,7 @@ async function onLineChosen(line, episode, { created } = {}) {
         addMessage('user', 'Перегенерировать блок');
         await think('Генерирую новый текст блока', 2000);
         const target = getBlock(state.activeBlockId);
-        if (target) {
-          target.parts = buildLineParts(line);
-          target.generated = generateFromParts(target.parts);
-          target.dirty = false;
-          target.constructorDone = false;
-          renderBlocks();
-          flashBlock(target.id);
-        }
-        addPlea(line.plea || PLEA_FALLBACK);
+        if (target) applyLineToBlock(target, line, { silent: true });
         endScenario('Текст блока обновлён по конструктору линии, просительная часть пересобрана.');
       }
     },
@@ -1958,7 +2007,7 @@ function runStarAction(action) {
       openEvidenceModal(block);
       break;
     case 'practice':
-      openPracticeModal();
+      openPracticeModal(block);
       break;
     case 'shorter':
       addMessage('user', `${block.label}: Перепеши короче`);
@@ -2210,19 +2259,155 @@ async function applyEvidence(block) {
   addMessage('assistant', `Текст ${block.label} перегенерирован.`);
 }
 
-/** 16.3 — попап практики по линии защиты. */
-function openPracticeModal() {
-  const items = PRACTICE_CASES.map(c => `
-    <div class="practice-case">
-      <div class="practice-case__num">${c.num}</div>
-      <div class="practice-case__court">${c.court}</div>
-      <div>${c.summary}</div>
-      <span class="practice-case__result">${c.result}</span>
-    </div>`).join('');
+/** Модалка выбора линии защиты для блока (чекбоксы, текущая отмечена). */
+function openLineModal(block) {
+  const lines = state.card.lines;
+  if (!lines.length) {
+    openModal({
+      title: 'Линия защиты',
+      bodyHtml: 'В карточке дела пока нет линий защиты. Создайте линию командой «создай линию» или через меню ✦ в чате.',
+      buttons: [{ label: 'Закрыть' }]
+    });
+    return;
+  }
+
+  const items = lines.map(l => `
+    <label class="evidence-item">
+      <input type="checkbox" data-line-id="${l.id}" ${block.lineId === l.id ? 'checked' : ''}>
+      <span><b>${shortLineTitle(l.title)}</b>${l.thesis ? `<br><small class="modal-sub">${l.thesis}</small>` : ''}</span>
+    </label>`).join('');
+
   openModal({
-    title: 'Практика по линии защиты',
+    title: `Линия защиты · ${block.label}`,
     bodyHtml: items,
     buttons: [{ label: 'Закрыть' }]
+  });
+
+  modalEl.querySelectorAll('input[data-line-id]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const lineId = cb.dataset.lineId;
+      if (!cb.checked && block.lineId === lineId) {
+        // сняли галку с используемой линии
+        confirmLineChange(block, null);
+      } else if (cb.checked && lineId !== block.lineId) {
+        const newLine = lines.find(l => l.id === lineId);
+        if (block.lineId) confirmLineChange(block, newLine);
+        else { closeModal(); applyLineToBlock(block, newLine); }
+      }
+    });
+  });
+}
+
+/** Подтверждение смены/снятия линии: информация блока будет удалена. */
+function confirmLineChange(block, newLine) {
+  openModal({
+    title: 'Смена линии защиты',
+    bodyHtml: 'Уверены, что хотите поменять линию? При смене линии вся информация блока будет удалена.',
+    buttons: [
+      { label: 'Отмена' },
+      {
+        label: 'Да, поменять',
+        primary: true,
+        onClick: () => {
+          closeModal();
+          const label = block.label;
+          clearBlockInfo(block);
+          if (newLine) applyLineToBlock(block, newLine);
+          else addMessage('assistant', `Линия защиты отвязана от ${labelGen(label)}, информация блока удалена.`);
+        }
+      }
+    ]
+  });
+}
+
+/** Модалка аргументов линии: чекбоксы, отмечены используемые в тексте. */
+function openArgsModal(block) {
+  const line = state.card.lines.find(l => l.id === block.lineId);
+  if (!line) {
+    openModal({ title: 'Аргументы', bodyHtml: 'Сначала привяжите к блоку линию защиты.', buttons: [{ label: 'Закрыть' }] });
+    return;
+  }
+  const pool = line.argumentsPool || (line.argument ? [line.argument.replace(/\s+/g, ' ').trim()] : []);
+  const selected = block.selectedArgs || (pool.length ? [0] : []);
+
+  const items = pool.map((a, i) => `
+    <label class="evidence-item">
+      <input type="checkbox" data-idx="${i}" ${selected.includes(i) ? 'checked' : ''}>
+      <span>${a}</span>
+    </label>`).join('');
+
+  openModal({
+    title: `Аргументы линии · ${block.label}`,
+    bodyHtml: items || 'Для этой линии аргументы не подобраны.',
+    buttons: [
+      { label: 'Отмена' },
+      {
+        label: 'Применить',
+        primary: true,
+        onClick: () => {
+          const sel = [...modalEl.querySelectorAll('input[data-idx]:checked')].map(i => +i.dataset.idx);
+          closeModal();
+          block.selectedArgs = sel;
+          const html = sel.map(i => pool[i]).join(' ');
+          const part = block.parts.find(p => p.key === 'arguments');
+          if (part) part.html = html;
+          else block.parts.splice(1, 0, { key: 'arguments', title: 'Аргументы', html });
+          block.dirty = true;
+          block.dirtyNotified = true;
+          renderBlocks();
+          flashBlock(block.id);
+          addMessage('assistant', `Состав аргументов ${labelGen(block.label)} обновлён: выбрано ${sel.length} из ${pool.length}. Кнопка «Перегенерировать» активна.`);
+        }
+      }
+    ]
+  });
+}
+
+/** 16.3 — практика: чекбоксы по делам, отмечены упомянутые в тексте блока. */
+function openPracticeModal(block) {
+  const pool = (state.card.practice && state.card.practice.length) ? state.card.practice : PRACTICE_CASES;
+  const canBind = !!(block && block.parts && block.parts.length);
+  const selected = canBind ? (block.selectedPractice || []) : [];
+
+  const items = pool.map((c, i) => `
+    <label class="evidence-item">
+      <input type="checkbox" data-idx="${i}" ${selected.includes(i) ? 'checked' : ''} ${canBind ? '' : 'disabled'}>
+      <span><b>${c.num}</b> · ${c.court}<br><small class="modal-sub">${c.summary}</small><br><span class="practice-case__result">${c.result}</span></span>
+    </label>`).join('');
+
+  openModal({
+    title: canBind ? `Практика по линии · ${block.label}` : 'Практика по линии защиты',
+    bodyHtml: items,
+    buttons: canBind ? [
+      { label: 'Отмена' },
+      {
+        label: 'Применить',
+        primary: true,
+        onClick: () => {
+          const sel = [...modalEl.querySelectorAll('input[data-idx]:checked')].map(i => +i.dataset.idx);
+          closeModal();
+          block.selectedPractice = sel;
+          const html = sel.map(i => `${pool[i].num} (${pool[i].court}) — ${pool[i].result.toLowerCase()}`).join('; ') + (sel.length ? '.' : '');
+          const existing = block.parts.find(p => p.key === 'practice');
+          if (sel.length) {
+            if (existing) existing.html = html;
+            else {
+              const idx = block.parts.findIndex(p => p.key === 'circumstances');
+              const item = { key: 'practice', title: 'Практика', html };
+              if (idx >= 0) block.parts.splice(idx, 0, item);
+              else block.parts.push(item);
+            }
+          } else if (existing) {
+            block.parts.splice(block.parts.indexOf(existing), 1);
+          }
+          block.dirty = true;
+          block.dirtyNotified = true;
+          renderBlocks();
+          flashBlock(block.id);
+          addMessage('assistant', `Практика ${labelGen(block.label)} обновлена: выбрано дел — ${sel.length}. Кнопка «Перегенерировать» активна.`);
+        }
+      }
+    ] : [{ label: 'Закрыть' }]
   });
 }
 
